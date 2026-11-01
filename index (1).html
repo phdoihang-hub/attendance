@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ลงเวลาด้วยใบหน้า</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --fg:#f1f5f9; --muted:#94a3b8; --ok:#22c55e; --bad:#ef4444; --accent:#3b82f6; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:14px 16px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:18px; margin:0; }
+  #who { font-size:12px; color:var(--muted); }
+  main { max-width:520px; margin:0 auto; padding:0 16px 32px; }
+  .tabs { display:flex; gap:8px; margin-bottom:12px; }
+  .tabs button { flex:1; padding:10px; border:0; border-radius:10px; background:var(--card); color:var(--muted); font-size:15px; cursor:pointer; }
+  .tabs button.on { background:var(--accent); color:#fff; }
+  .card { background:var(--card); border-radius:16px; padding:14px; margin-bottom:12px; }
+  .cam { position:relative; border-radius:14px; overflow:hidden; background:#000; aspect-ratio:4/3; padding:0; }
+  video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  #status { margin:12px 0 4px; font-size:17px; min-height:26px; text-align:center; }
+  #status.step { color:#fde047; font-weight:600; font-size:20px; }
+  #gps { font-size:13px; color:var(--muted); text-align:center; }
+  .row { display:flex; gap:10px; margin-top:12px; }
+  .btn { flex:1; padding:16px; border:0; border-radius:12px; font-size:17px; font-weight:600; color:#fff; cursor:pointer; }
+  .btn.in { background:var(--ok); } .btn.out { background:#f97316; } .btn.reg { background:var(--accent); width:100%; }
+  .btn.small { padding:10px; font-size:15px; background:#334155; }
+  .btn:disabled { opacity:.4; cursor:not-allowed; }
+  #result { display:none; text-align:center; padding:18px; border-radius:16px; margin-bottom:12px; }
+  #result.ok { background:#14532d; display:block; } #result.bad { background:#7f1d1d; display:block; }
+  #result .big { font-size:22px; font-weight:700; }
+  input { width:100%; padding:12px; margin:6px 0; border-radius:10px; border:1px solid #334155; background:#0f172a; color:var(--fg); font-size:16px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  td, th { padding:8px 4px; border-bottom:1px solid #334155; text-align:left; }
+  td button { padding:6px 10px; border-radius:8px; border:0; background:#334155; color:var(--fg); cursor:pointer; }
+  .hint { font-size:12px; color:var(--muted); margin-top:8px; }
+</style>
+</head>
+<body>
+<header><h1>ลงเวลาด้วยใบหน้า</h1><span id="who"></span></header>
+<main>
+  <div class="tabs">
+    <button id="tabScan" class="on">ลงเวลา</button>
+    <button id="tabAdmin">ผู้ดูแล</button>
+  </div>
+
+  <div id="result"></div>
+
+  <div class="card cam"><video id="video" autoplay muted playsinline></video></div>
+  <div id="status">กำลังเตรียมระบบ...</div>
+  <div id="gps">ตำแหน่ง: กำลังค้นหา...</div>
+
+  <section id="viewScan">
+    <div class="row">
+      <button id="btnIn" class="btn in" disabled>เข้างาน</button>
+      <button id="btnOut" class="btn out" disabled>ออกงาน</button>
+    </div>
+    <p class="hint">กดปุ่มแล้วทำตามคำสั่งบนหน้าจอ (เช่น กระพริบตา หันหน้า ยิ้ม) จากนั้นมองตรงที่กล้อง</p>
+  </section>
+
+  <section id="viewAdmin" hidden>
+    <div class="card" id="loginBox">
+      <b>เข้าสู่ระบบผู้ดูแล</b>
+      <input id="adminPw" type="password" placeholder="รหัสผ่านผู้ดูแล" autocomplete="current-password">
+      <button id="btnLogin" class="btn reg" style="margin-top:8px">เข้าสู่ระบบ</button>
+    </div>
+
+    <div id="adminBox" hidden>
+      <div class="card">
+        <b>ลงทะเบียนใบหน้าพนักงาน</b>
+        <input id="empId" placeholder="รหัสพนักงาน (A-Z, 0-9)" autocomplete="off">
+        <input id="empName" placeholder="ชื่อ-นามสกุล" autocomplete="off">
+        <button id="btnEnroll" class="btn reg" disabled style="margin-top:8px">เริ่มบันทึกใบหน้า (5 ภาพ)</button>
+        <p class="hint">ให้พนักงานยืนหน้ากล้องต่อหน้าผู้ดูแล ระบบจะถ่าย 5 ภาพต่อเนื่อง ขยับหน้าเล็กน้อยตามคำสั่ง</p>
+      </div>
+      <div class="card">
+        <b>พนักงานที่ลงทะเบียนแล้ว</b>
+        <table id="empTable"><tbody></tbody></table>
+      </div>
+      <button id="btnLogout" class="btn small" style="width:100%">ออกจากระบบผู้ดูแล</button>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+<script>
+// ===== ตั้งค่า: วาง URL ของ Web app ที่ได้จาก Apps Script (ลงท้ายด้วย /exec) =====
+const API_URL = 'https://script.google.com/macros/s/AKfycbxghB9UBSa53vXXyH6fz6H9E2ctVNfAiuMavqdCo50c32L2A2CC5ESX4hc0RLjsK2Jj9Q/exec';
+// ===============================================================================
+
+const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+// ค่าปรับแต่งการตรวจ liveness (ทดลองปรับตามกล้องจริง)
+const EAR_CLOSED = 0.21, EAR_OPEN = 0.26;   // อัตราส่วนตา: ปิด/เปิด
+const YAW_RIGHT = 0.38, YAW_LEFT = 0.62;     // ตำแหน่งจมูกเทียบกรอบหน้า (0-1)
+const SMILE = 0.85;                          // ความมั่นใจของสีหน้ายิ้ม
+const STEP_TIMEOUT_MS = 12000;
+
+const $ = id => document.getElementById(id);
+const video = $('video');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const detOpts = () => new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+
+let init = null, ready = false, busy = false, adminToken = null;
+
+// เรียก GAS ด้วย POST (ไม่ใส่ header เพื่อเลี่ยง CORS preflight)
+async function api(action, data) {
+  let res;
+  try {
+    res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action }, data || {})) });
+  } catch (e) {
+    throw new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ตรวจ API_URL และสิทธิ์ของ Web app (Anyone)');
+  }
+  let out;
+  try { out = await res.json(); } catch (e) { throw new Error('เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ ตรวจว่า deploy เป็นเวอร์ชันล่าสุดและเลือก Anyone'); }
+  if (out && out.code === 'AUTH') { adminLoggedOut(); }
+  return out;
+}
+
+const PROMPT = {
+  blink: 'กระพริบตา 1 ครั้ง',
+  turnRight: 'หันหน้าไปทางขวา (ของคุณ) ช้าๆ',
+  turnLeft: 'หันหน้าไปทางซ้าย (ของคุณ) ช้าๆ',
+  smile: 'ยิ้มกว้างๆ'
+};
+
+function setStatus(t, kind) { const s = $('status'); s.textContent = t; s.className = kind || ''; }
+function setButtons() {
+  const on = ready && !busy;
+  $('btnIn').disabled = !on; $('btnOut').disabled = !on; $('btnEnroll').disabled = !on;
+}
+
+// ---------------------------------------------------------------- เริ่มระบบ
+function cameraError(e) {
+  if (e && (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError')) return 'ไม่ได้รับอนุญาตให้ใช้กล้อง กรุณากดอนุญาตที่แถบที่อยู่ แล้วรีโหลดหน้า';
+  if (e && e.name === 'NotFoundError') return 'ไม่พบกล้องในอุปกรณ์นี้';
+  if (e && e.name === 'NotReadableError') return 'กล้องถูกใช้งานโดยแอปอื่นอยู่';
+  return e.message || String(e);
+}
+
+async function boot() {
+  try {
+    if (API_URL.indexOf('PASTE_') === 0) throw new Error('ยังไม่ได้ตั้งค่า API_URL ในไฟล์ index.html');
+    if (!window.isSecureContext) throw new Error('ต้องเปิดผ่าน HTTPS เท่านั้น');
+    setStatus('กำลังเชื่อมต่อเซิร์ฟเวอร์...');
+    init = await api('init');
+    if (!init.ok) throw new Error(init.message || 'เริ่มระบบไม่สำเร็จ');
+
+    setStatus('กำลังโหลดโมเดลใบหน้า...');
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+    ]);
+
+    setStatus('กำลังเปิดกล้อง...');
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 }, audio: false });
+    } catch (e) { throw new Error(cameraError(e)); }
+    video.srcObject = stream;
+    await video.play();
+    ready = true;
+    setStatus('พร้อมใช้งาน');
+    setButtons();
+    refreshGps();
+  } catch (e) {
+    setStatus('เริ่มระบบไม่สำเร็จ: ' + e.message);
+  }
+}
+
+// ---------------------------------------------------------------- GPS
+function getPosition() {
+  return new Promise((res, rej) => {
+    if (!navigator.geolocation) return rej(new Error('อุปกรณ์ไม่รองรับ GPS'));
+    navigator.geolocation.getCurrentPosition(res,
+      err => rej(new Error(err.code === 1 ? 'ไม่ได้อนุญาตการเข้าถึงตำแหน่ง' : 'ไม่สามารถระบุตำแหน่งได้')),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  });
+}
+function haversine(a, b, c, d) {
+  const R = 6371000, r = Math.PI / 180, dLat = (c - a) * r, dLng = (d - b) * r;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+function showGps(pos) {
+  let best = null;
+  (init.locations || []).forEach(l => {
+    const d = haversine(pos.coords.latitude, pos.coords.longitude, l.lat, l.lng);
+    if (!best || d < best.d) best = { d, l };
+  });
+  const acc = '±' + Math.round(pos.coords.accuracy) + ' ม.';
+  $('gps').textContent = best
+    ? `ตำแหน่ง: ห่างจาก "${best.l.name}" ${Math.round(best.d)} ม. (รัศมี ${best.l.radius} ม., GPS ${acc})`
+    : 'ตำแหน่ง: ยังไม่ได้ตั้งค่าพื้นที่ทำงาน';
+}
+async function refreshGps() {
+  try { showGps(await getPosition()); } catch (e) { $('gps').textContent = 'ตำแหน่ง: ' + e.message; }
+}
+
+// ---------------------------------------------------------------- วิเคราะห์ใบหน้า
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+function eyeEar(p) { return (dist(p[1], p[5]) + dist(p[2], p[4])) / (2 * dist(p[0], p[3])); }
+function avgEar(lm) { return (eyeEar(lm.getLeftEye()) + eyeEar(lm.getRightEye())) / 2; }
+// ภาพดิบจากกล้องไม่กลับด้าน: ค่าต่ำ = ผู้ใช้หันไปทางขวาของตัวเอง
+function yaw(lm) {
+  const jaw = lm.getJawOutline(), nose = lm.getNose()[3];
+  return (nose.x - jaw[0].x) / (jaw[16].x - jaw[0].x);
+}
+
+async function doStep(step) {
+  setStatus(PROMPT[step], 'step');
+  const end = Date.now() + STEP_TIMEOUT_MS;
+  let sawOpen = false, sawClosed = false;
+  while (Date.now() < end) {
+    const r = await faceapi.detectSingleFace(video, detOpts()).withFaceLandmarks().withFaceExpressions();
+    if (r) {
+      const lm = r.landmarks;
+      if (step === 'blink') {
+        const e = avgEar(lm);
+        if (e > EAR_OPEN) { if (sawClosed) return; sawOpen = true; }
+        else if (e < EAR_CLOSED && sawOpen) sawClosed = true;
+      } else if (step === 'turnRight') { if (yaw(lm) < YAW_RIGHT) return; }
+      else if (step === 'turnLeft') { if (yaw(lm) > YAW_LEFT) return; }
+      else if (step === 'smile') { if (r.expressions.happy > SMILE) return; }
+    }
+    await sleep(80);
+  }
+  throw new Error('หมดเวลา: ' + PROMPT[step] + ' กรุณาลองใหม่');
+}
+
+async function captureFrontal(minScore, strictFront) {
+  const end = Date.now() + 8000;
+  while (Date.now() < end) {
+    const r = await faceapi.detectSingleFace(video, detOpts()).withFaceLandmarks().withFaceDescriptor();
+    if (r && r.detection.score > minScore) {
+      const y = yaw(r.landmarks);
+      if (!strictFront || (y > 0.43 && y < 0.57)) return Array.from(r.descriptor);
+    }
+    await sleep(100);
+  }
+  throw new Error('ไม่พบใบหน้าที่ชัดเจน กรุณาลองใหม่');
+}
+
+// ---------------------------------------------------------------- ลงเวลา
+function showResult(ok, html) {
+  const r = $('result');
+  r.className = ok ? 'ok' : 'bad';
+  r.innerHTML = html;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function scan(type) {
+  if (busy || !ready) return;
+  busy = true; setButtons(); $('result').className = '';
+  try {
+    setStatus('กำลังตรวจตำแหน่ง GPS...');
+    const pos = await getPosition();
+    showGps(pos);
+
+    const ch = await api('challenge');
+    if (!ch.ok) throw new Error(ch.message || 'ขอโจทย์ไม่สำเร็จ');
+    const done = [];
+    for (const step of ch.steps) { await doStep(step); done.push(step); }
+
+    setStatus('มองตรงที่กล้อง...', 'step');
+    const descriptor = await captureFrontal(0.8, true);
+
+    setStatus('กำลังตรวจสอบ...');
+    const r = await api('checkIn', {
+      type, token: ch.token, steps: done, descriptor,
+      lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy,
+      ua: navigator.userAgent
+    });
+    if (r.ok) {
+      const label = r.type === 'IN' ? 'เข้างาน' : 'ออกงาน';
+      showResult(true, `<div class="big">✓ ${esc(r.name)}</div><div>${label} ${esc(r.time)}${r.status !== '-' ? ' · ' + esc(r.status) : ''}</div><div style="font-size:13px;opacity:.8">${esc(r.location)} · ห่าง ${r.distance} ม.</div>`);
+      setStatus('บันทึกเรียบร้อย');
+    } else {
+      showResult(false, `<div class="big">✗ ไม่สำเร็จ</div><div>${esc(r.message)}</div>`);
+      setStatus('ลองใหม่อีกครั้ง');
+    }
+  } catch (e) {
+    showResult(false, `<div class="big">✗ ไม่สำเร็จ</div><div>${esc(e.message)}</div>`);
+    setStatus('ลองใหม่อีกครั้ง');
+  } finally { busy = false; setButtons(); }
+}
+
+// ---------------------------------------------------------------- ผู้ดูแล
+function adminLoggedIn(token) {
+  adminToken = token;
+  $('loginBox').hidden = true; $('adminBox').hidden = false;
+  $('adminPw').value = '';
+  loadEmployees();
+}
+function adminLoggedOut() {
+  adminToken = null;
+  $('loginBox').hidden = false; $('adminBox').hidden = true;
+}
+
+async function login() {
+  const pw = $('adminPw').value;
+  if (!pw) return showResult(false, 'กรุณากรอกรหัสผ่าน');
+  $('btnLogin').disabled = true; $('result').className = '';
+  try {
+    const r = await api('login', { password: pw });
+    if (r.ok) adminLoggedIn(r.adminToken);
+    else showResult(false, esc(r.message));
+  } catch (e) { showResult(false, esc(e.message)); }
+  finally { $('btnLogin').disabled = false; }
+}
+
+async function logout() {
+  const t = adminToken;
+  adminLoggedOut();
+  try { await api('logout', { adminToken: t }); } catch (e) { /* ignore */ }
+}
+
+async function enroll() {
+  if (busy || !ready || !adminToken) return;
+  const id = $('empId').value.trim(), name = $('empName').value.trim();
+  if (!id || !name) return showResult(false, 'กรุณากรอกรหัสและชื่อพนักงาน');
+  busy = true; setButtons(); $('result').className = '';
+  try {
+    const prompts = ['มองตรง', 'เอียงหน้าเล็กน้อยไปทางซ้าย', 'เอียงหน้าเล็กน้อยไปทางขวา', 'มองตรง ยิ้มเล็กน้อย', 'มองตรง'];
+    const samples = [];
+    for (let i = 0; i < prompts.length; i++) {
+      setStatus(`ภาพที่ ${i + 1}/5: ${prompts[i]}`, 'step');
+      await sleep(1200);
+      samples.push(await captureFrontal(0.85, false));
+    }
+    setStatus('กำลังบันทึก...');
+    const r = await api('register', { adminToken, empId: id, name, samples });
+    showResult(r.ok, esc(r.message));
+    setStatus(r.ok ? 'บันทึกเรียบร้อย' : 'ลองใหม่อีกครั้ง');
+    if (r.ok) { $('empId').value = ''; $('empName').value = ''; loadEmployees(); }
+  } catch (e) {
+    showResult(false, esc(e.message)); setStatus('ลองใหม่อีกครั้ง');
+  } finally { busy = false; setButtons(); }
+}
+
+async function loadEmployees() {
+  const tb = $('empTable').querySelector('tbody');
+  tb.textContent = '';
+  const r = await api('listEmployees', { adminToken });
+  if (!r.ok) return;
+  r.list.forEach(e => {
+    const tr = document.createElement('tr');
+    [e.id, e.name, e.active ? 'ใช้งาน' : 'ปิด'].forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+    const td = document.createElement('td'), b = document.createElement('button');
+    b.textContent = e.active ? 'ปิดใช้งาน' : 'เปิดใช้งาน';
+    b.onclick = async () => { await api('setActive', { adminToken, empId: e.id, active: !e.active }); loadEmployees(); };
+    td.appendChild(b); tr.appendChild(td); tb.appendChild(tr);
+  });
+}
+
+// ---------------------------------------------------------------- UI
+$('btnIn').onclick = () => scan('IN');
+$('btnOut').onclick = () => scan('OUT');
+$('btnEnroll').onclick = enroll;
+$('btnLogin').onclick = login;
+$('btnLogout').onclick = logout;
+$('adminPw').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+$('tabScan').onclick = () => { $('viewScan').hidden = false; $('viewAdmin').hidden = true; $('tabScan').className = 'on'; $('tabAdmin').className = ''; };
+$('tabAdmin').onclick = () => { $('viewScan').hidden = true; $('viewAdmin').hidden = false; $('tabAdmin').className = 'on'; $('tabScan').className = ''; };
+boot();
+</script>
+</body>
+</html>
